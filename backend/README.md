@@ -15,6 +15,8 @@ changes, e.g. Postgres, as long as that database's driver package is installed.
 cd backend
 uv run uvicorn nookan_backend.main:app --reload   # run the dev server (http://localhost:8000)
 uv run pytest                                     # run the tests
+uv run ruff check .                               # lint
+uv run ruff format .                              # format
 
 # to use a non-default database, copy .env.example to .env, adjust it, then:
 uv run --env-file .env uvicorn nookan_backend.main:app --reload

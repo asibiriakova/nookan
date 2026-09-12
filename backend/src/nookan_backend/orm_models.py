@@ -26,7 +26,9 @@ class CardRow(Base):
     __tablename__ = "cards"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    board_id: Mapped[str] = mapped_column(String, ForeignKey("boards.id"), nullable=False, index=True)
+    board_id: Mapped[str] = mapped_column(
+        String, ForeignKey("boards.id"), nullable=False, index=True
+    )
     title: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     position: Mapped[float] = mapped_column(Float, nullable=False)

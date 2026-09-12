@@ -1,5 +1,5 @@
 .PHONY: help install install-api install-ui dev dev-api dev-ui \
-        test test-api test-ui lint build clean
+        test test-api test-ui lint lint-api lint-ui build clean
 
 help:
 	@echo "Available targets:"
@@ -9,7 +9,9 @@ help:
 	@echo "  test       Run backend and frontend tests"
 	@echo "  test-api   Run backend tests (pytest)"
 	@echo "  test-ui    Run frontend tests (vitest)"
-	@echo "  lint       Lint the frontend"
+	@echo "  lint       Lint the backend and frontend"
+	@echo "  lint-api   Lint the backend (ruff)"
+	@echo "  lint-ui    Lint the frontend (oxlint)"
 	@echo "  build      Build the frontend for production"
 	@echo "  clean      Remove build artifacts and caches"
 
@@ -35,7 +37,12 @@ test-api:
 test-ui:
 	cd frontend && npm run test
 
-lint:
+lint: lint-api lint-ui
+
+lint-api:
+	cd backend && uv run ruff check . && uv run ruff format --check .
+
+lint-ui:
 	cd frontend && npm run lint
 
 build:

@@ -16,6 +16,8 @@ Backend (FastAPI, managed with uv) - a few useful commands:
 ```bash
 cd backend && uv run uvicorn nookan_backend.main:app --reload
 cd backend && uv run pytest
+cd backend && uv run ruff check .    # lint
+cd backend && uv run ruff format .   # format
 ```
 
 Regularly commit code to GitHub

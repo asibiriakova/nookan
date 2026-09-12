@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from nanoid import generate as _nanoid
 
@@ -18,7 +18,7 @@ def new_id() -> str:
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def normalize_title(title: str | None) -> str:
