@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Nookan backend's default local SQLite database (see backend/.env.example)
+backend/*.db
+backend/*.db-journal
+backend/*.db-wal
+backend/*.db-shm

@@ -1,7 +1,7 @@
 """FastAPI application implementing the contract in openapi.yaml.
 
-Persistence is currently an in-memory mock (see `db.py`); swap that module
-out for a real database later without touching the routers.
+Persistence is SQLite by default via SQLAlchemy (see `db.py`/`database.py`),
+configurable through the `DATABASE_URL` env var — see `config.py`.
 """
 
 from __future__ import annotations
