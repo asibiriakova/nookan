@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { SyncState } from '../hooks/useBoard';
 
 interface Props {
@@ -48,6 +49,10 @@ export function BoardHeader({ title, onRename, sync }: Props) {
 
   return (
     <header className="board-header">
+      <Link to="/" className="glass-button glass-button--small board-header__home">
+        ← Home
+      </Link>
+
       <div className="board-header__title">
         {editing ? (
           <input

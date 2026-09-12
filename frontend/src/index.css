@@ -278,11 +278,16 @@ a:hover {
   top: 0;
   z-index: 5;
 }
+.board-header__home {
+  flex-shrink: 0;
+  text-decoration: none;
+}
 .board-header__title {
   display: flex;
   align-items: baseline;
   gap: 12px;
   min-width: 0;
+  flex: 1;
 }
 .board-header__title h1 {
   font-size: 19px;

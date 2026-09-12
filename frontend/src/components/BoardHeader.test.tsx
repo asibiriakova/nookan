@@ -1,29 +1,52 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ComponentProps } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { BoardHeader } from './BoardHeader';
 
+function renderHeader(props: ComponentProps<typeof BoardHeader>) {
+  return render(
+    <MemoryRouter>
+      <BoardHeader {...props} />
+    </MemoryRouter>,
+  );
+}
+
 describe('BoardHeader', () => {
   it('shows the board title as heading text', () => {
-    render(<BoardHeader title="Sprint 12" onRename={vi.fn()} sync="idle" />);
+    renderHeader({ title: 'Sprint 12', onRename: vi.fn(), sync: 'idle' });
     expect(screen.getByRole('heading', { name: 'Sprint 12' })).toBeInTheDocument();
   });
 
+  it('links back to the home page', () => {
+    renderHeader({ title: 'Sprint 12', onRename: vi.fn(), sync: 'idle' });
+    expect(screen.getByRole('link', { name: /home/i })).toHaveAttribute('href', '/');
+  });
+
   it('shows a human-readable sync state', () => {
-    const { rerender } = render(<BoardHeader title="Sprint 12" onRename={vi.fn()} sync="syncing" />);
+    const { rerender } = renderHeader({ title: 'Sprint 12', onRename: vi.fn(), sync: 'syncing' });
     expect(screen.getByText('Syncing…')).toBeInTheDocument();
 
-    rerender(<BoardHeader title="Sprint 12" onRename={vi.fn()} sync="error" />);
+    rerender(
+      <MemoryRouter>
+        <BoardHeader title="Sprint 12" onRename={vi.fn()} sync="error" />
+      </MemoryRouter>,
+    );
     expect(screen.getByText('Offline — retrying')).toBeInTheDocument();
 
-    rerender(<BoardHeader title="Sprint 12" onRename={vi.fn()} sync="idle" />);
+    rerender(
+      <MemoryRouter>
+        <BoardHeader title="Sprint 12" onRename={vi.fn()} sync="idle" />
+      </MemoryRouter>,
+    );
     expect(screen.getByText('Synced')).toBeInTheDocument();
   });
 
   it('renames the board by clicking the title and pressing Enter', async () => {
     const user = userEvent.setup();
     const onRename = vi.fn();
-    render(<BoardHeader title="Sprint 12" onRename={onRename} sync="idle" />);
+    renderHeader({ title: 'Sprint 12', onRename, sync: 'idle' });
 
     await user.click(screen.getByRole('heading', { name: 'Sprint 12' }));
     const input = screen.getByDisplayValue('Sprint 12');
@@ -36,7 +59,7 @@ describe('BoardHeader', () => {
   it('does not rename on an unchanged or blank title', async () => {
     const user = userEvent.setup();
     const onRename = vi.fn();
-    render(<BoardHeader title="Sprint 12" onRename={onRename} sync="idle" />);
+    renderHeader({ title: 'Sprint 12', onRename, sync: 'idle' });
 
     await user.click(screen.getByRole('heading', { name: 'Sprint 12' }));
     await user.keyboard('{Enter}'); // unchanged
@@ -52,7 +75,7 @@ describe('BoardHeader', () => {
   it('discards the edit on Escape', async () => {
     const user = userEvent.setup();
     const onRename = vi.fn();
-    render(<BoardHeader title="Sprint 12" onRename={onRename} sync="idle" />);
+    renderHeader({ title: 'Sprint 12', onRename, sync: 'idle' });
 
     await user.click(screen.getByRole('heading', { name: 'Sprint 12' }));
     const input = screen.getByDisplayValue('Sprint 12');
@@ -69,7 +92,7 @@ describe('BoardHeader', () => {
       const user = userEvent.setup();
       const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
 
-      render(<BoardHeader title="Sprint 12" onRename={vi.fn()} sync="idle" />);
+      renderHeader({ title: 'Sprint 12', onRename: vi.fn(), sync: 'idle' });
       await user.click(screen.getByRole('button', { name: 'Copy share link' }));
 
       expect(writeText).toHaveBeenCalledWith(window.location.href);
@@ -80,7 +103,7 @@ describe('BoardHeader', () => {
       const user = userEvent.setup();
       vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
 
-      render(<BoardHeader title="Sprint 12" onRename={vi.fn()} sync="idle" />);
+      renderHeader({ title: 'Sprint 12', onRename: vi.fn(), sync: 'idle' });
       await user.click(screen.getByRole('button', { name: 'Copy share link' }));
 
       expect(await screen.findByText('Link copied!')).toBeInTheDocument();
