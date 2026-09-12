@@ -1,0 +1,347 @@
+/* =========================================================================
+   Liquid Glass — a lightweight, GPU-friendly "convex glass" design system
+   =========================================================================
+   Pure CSS + optional inline SVG filters. No WebGL/canvas.
+
+   Perf rules this file follows throughout:
+   - `backdrop-filter` blur/saturate values are set ONCE per element and
+     never transition or change between states — recomputing a backdrop
+     blur is expensive and can tank scroll FPS.
+   - Only `transform` and `opacity` are ever transitioned. Elevation
+     ("shadow gets bigger on hover") is faked by cross-fading a second,
+     pre-rendered shadow layer's opacity rather than animating box-shadow
+     itself, which is not compositor-accelerated.
+   - `will-change: transform` is applied only to the small, known set of
+     interactive components below (buttons / interactive cards) — not
+     globally — since over-using it wastes compositor memory.
+   ========================================================================= */
+
+:root {
+  /* ---- Tint & surface --------------------------------------------------
+     Channels (not full colors) so alpha can be tuned per use with
+     rgb(var(--x) / <alpha>). Swap these two triplets to re-theme. */
+  --glass-tint: 255 255 255;       /* the glass itself: reflections, rim light */
+  --glass-shade: 8 10 14;          /* what the glass is floating over: inner shadow, AO */
+
+  --glass-bg-alpha: 0.10;          /* base surface opacity */
+  --glass-bg-alpha-hover: 0.14;
+  --glass-bg-alpha-active: 0.08;
+  --glass-border-alpha: 0.28;
+  --glass-reflect-opacity: 0.55;   /* strength of the top specular highlight */
+  --glass-inset-depth: 1px;        /* thickness of the inner rim shadows */
+
+  /* ---- Optics ------------------------------------------------------- */
+  --glass-blur: 18px;
+  --glass-saturate: 160%;
+  --glass-radius: 22px;
+  --glass-radius-sm: 14px;
+
+  /* ---- Accent (buttons, focus ring) ---------------------------------- */
+  --glass-accent: 90 170 255;      /* rgb channels, primary accent hue */
+
+  /* ---- Elevation (see perf note above: cross-faded, never transitioned) */
+  --glass-elevation: 0 10px 30px -8px rgb(var(--glass-shade) / 0.55);
+  --glass-elevation-hover: 0 18px 44px -10px rgb(var(--glass-shade) / 0.62);
+
+  /* ---- Type ------------------------------------------------------------ */
+  --glass-text: #f5f7fa;
+  --glass-text-muted: rgb(245 247 250 / 0.72);
+
+  /* ---- Motion ------------------------------------------------------- */
+  --glass-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --glass-duration-fast: 140ms;
+  --glass-duration-med: 320ms;
+
+  --glass-focus-ring: 0 0 0 3px rgb(var(--glass-accent) / 0.5);
+}
+
+/* =========================================================================
+   .glass-panel — base surface. Everything else composes on top of this.
+   ========================================================================= */
+
+.glass-panel {
+  position: relative;
+  isolation: isolate; /* keep ::before/::after blend modes contained */
+  border-radius: var(--glass-radius);
+  color: var(--glass-text);
+
+  background: linear-gradient(
+    160deg,
+    rgb(var(--glass-tint) / calc(var(--glass-bg-alpha) + 0.06)) 0%,
+    rgb(var(--glass-tint) / var(--glass-bg-alpha)) 55%,
+    rgb(var(--glass-tint) / calc(var(--glass-bg-alpha) - 0.04)) 100%
+  );
+
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+
+  border: 1px solid rgb(var(--glass-tint) / var(--glass-border-alpha));
+
+  box-shadow:
+    /* top specular rim — light catching the convex top edge */
+    inset 0 var(--glass-inset-depth) 0 rgb(var(--glass-tint) / var(--glass-reflect-opacity)),
+    /* bottom inner shadow — gives the surface thickness */
+    inset 0 calc(var(--glass-inset-depth) * -1) 0 rgb(var(--glass-shade) / 0.35),
+    /* left/right edge refraction */
+    inset 1px 0 0 rgb(var(--glass-tint) / 0.12),
+    inset -1px 0 0 rgb(var(--glass-shade) / 0.18),
+    var(--glass-elevation);
+}
+
+/* Glossy curve: a soft highlight arcing across the top, like light
+   wrapping a convex lens. Purely decorative, so it's inert to pointer
+   events and painted once (no animation on this layer by default). */
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  background: radial-gradient(
+    130% 70% at 50% -20%,
+    rgb(var(--glass-tint) / 0.65) 0%,
+    rgb(var(--glass-tint) / 0) 60%
+  );
+  mix-blend-mode: overlay;
+}
+
+/* Faint bottom vignette for ambient occlusion / grounding. */
+.glass-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(0deg, rgb(var(--glass-shade) / 0.28), transparent 45%);
+}
+
+/* Content sits above the optical pseudo-layers. */
+.glass-panel > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* =========================================================================
+   .glass-card — a glass-panel sized/spaced for content
+   ========================================================================= */
+
+.glass-card {
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 22rem;
+}
+
+.glass-card__eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glass-text-muted);
+}
+
+.glass-card__title {
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 650;
+  line-height: 1.25;
+  /* Legibility layer: glass surfaces vary in luminance underneath text,
+     so a soft shadow keeps contrast stable rather than relying on the
+     surface alone. */
+  text-shadow: 0 1px 3px rgb(var(--glass-shade) / 0.45);
+}
+
+.glass-card__body {
+  margin: 0;
+  color: var(--glass-text-muted);
+  line-height: 1.55;
+  text-shadow: 0 1px 2px rgb(var(--glass-shade) / 0.35);
+}
+
+/* Interactive card variant (e.g. a clickable summary card): same lift/press
+   language as the button, applied to the whole panel. */
+.glass-card--interactive {
+  cursor: pointer;
+  will-change: transform;
+  transition: transform var(--glass-duration-med) var(--glass-ease);
+}
+
+.glass-card--interactive:hover {
+  transform: translateY(-3px);
+}
+
+.glass-card--interactive:active {
+  transform: translateY(-1px) scale(0.99);
+  transition-duration: var(--glass-duration-fast);
+}
+
+/* =========================================================================
+   .glass-button
+   ========================================================================= */
+
+.glass-button {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.8rem 1.6rem;
+  border-radius: var(--glass-radius-sm);
+  border: 1px solid rgb(var(--glass-tint) / var(--glass-border-alpha));
+
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--glass-text);
+  text-shadow: 0 1px 2px rgb(var(--glass-shade) / 0.4);
+
+  background: linear-gradient(
+    160deg,
+    rgb(var(--glass-tint) / calc(var(--glass-bg-alpha) + 0.08)) 0%,
+    rgb(var(--glass-tint) / var(--glass-bg-alpha)) 100%
+  );
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+
+  box-shadow:
+    inset 0 var(--glass-inset-depth) 0 rgb(var(--glass-tint) / var(--glass-reflect-opacity)),
+    inset 0 calc(var(--glass-inset-depth) * -1) 0 rgb(var(--glass-shade) / 0.3),
+    var(--glass-elevation);
+
+  cursor: pointer;
+  will-change: transform;
+  transition: transform var(--glass-duration-fast) var(--glass-ease);
+}
+
+.glass-button::before {
+  /* top sheen */
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(
+    140% 90% at 50% -30%,
+    rgb(var(--glass-tint) / 0.6) 0%,
+    rgb(var(--glass-tint) / 0) 60%
+  );
+  mix-blend-mode: overlay;
+  opacity: 1;
+  transition: opacity var(--glass-duration-fast) var(--glass-ease);
+}
+
+.glass-button::after {
+  /* Pre-rendered "raised" elevation layer, cross-faded in on hover instead
+     of animating box-shadow (see perf note at the top of the file). */
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  box-shadow: var(--glass-elevation-hover);
+  opacity: 0;
+  transition: opacity var(--glass-duration-med) var(--glass-ease);
+}
+
+.glass-button > * {
+  position: relative;
+  z-index: 1;
+}
+
+.glass-button:hover {
+  transform: translateY(-2px);
+}
+.glass-button:hover::after {
+  opacity: 1;
+}
+
+.glass-button:active {
+  transform: translateY(1px) scale(0.98);
+  transition-duration: var(--glass-duration-fast);
+}
+.glass-button:active::before {
+  opacity: 0.5; /* highlight compresses as the surface "presses in" */
+}
+.glass-button:active::after {
+  opacity: 0;
+}
+
+.glass-button:disabled,
+.glass-button[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+/* ---- Primary variant: accent-tinted glass ------------------------------ */
+
+.glass-button--primary {
+  border-color: rgb(var(--glass-accent) / 0.45);
+  background: linear-gradient(
+    160deg,
+    rgb(var(--glass-accent) / 0.42) 0%,
+    rgb(var(--glass-accent) / 0.22) 100%
+  );
+}
+
+/* ---- Size modifiers ---------------------------------------------------- */
+
+.glass-button--large {
+  padding: 1rem 2rem;
+  font-size: 1.02rem;
+}
+
+.glass-button--small {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+/* =========================================================================
+   Focus-visible — real outlines, not just a glow, so it survives
+   forced-colors / high-contrast modes.
+   ========================================================================= */
+
+.glass-panel:focus-visible,
+.glass-button:focus-visible,
+.glass-card:focus-visible {
+  outline: 2px solid rgb(var(--glass-accent) / 1);
+  outline-offset: 3px;
+  box-shadow: var(--glass-focus-ring), var(--glass-elevation);
+}
+
+/* =========================================================================
+   Fallbacks & preferences
+   ========================================================================= */
+
+/* Browsers without backdrop-filter get a solid-enough panel instead of a
+   flat, nearly-invisible one. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-panel,
+  .glass-button {
+    background-color: rgb(22 24 30 / 0.92);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-button,
+  .glass-card--interactive,
+  .glass-button::before,
+  .glass-button::after {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-panel,
+  .glass-button {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-color: rgb(22 24 30 / 0.94);
+  }
+}
