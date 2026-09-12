@@ -1,0 +1,310 @@
+openapi: 3.0.3
+info:
+  title: Nookan (Mini Kanban Board) API
+  version: "1.0"
+  description: |
+    Backend contract expected by the frontend's API client
+    ([frontend/src/api/backend.ts](frontend/src/api/backend.ts)), which is
+    currently implemented as a localStorage-backed mock. This document
+    specifies the real REST API that mock mirrors 1:1, per
+    [_docs/specs.md](_docs/specs.md) §4.2, so the mock body can be swapped
+    for real `fetch()` calls without changing any calling code.
+
+    ### Authentication
+
+    **No endpoint requires authentication.** Per the spec's access-control
+    model (§2, §3.1), there are no user accounts, passwords, or auth
+    tokens anywhere in the MVP (explicitly out of scope, §6). Access
+    control instead relies on **possession of the board's unguessable id**
+    (≥128 bits of entropy, e.g. a 21-character NanoID, §5): anyone who
+    knows/receives a board's id or share URL (`/b/{board_id}`) has full
+    read/write access to that board and its cards. Card endpoints are
+    reached by `card_id` alone and are equally unauthenticated — the
+    board's id is the only "secret" in this system.
+servers:
+  - url: /api/v1
+
+security: []
+
+tags:
+  - name: boards
+    description: Board creation, retrieval, and title updates.
+  - name: cards
+    description: Card creation, updates, and deletion within a board.
+
+paths:
+  /boards:
+    post:
+      operationId: createBoard
+      tags: [boards]
+      summary: Create a new board
+      description: |
+        Creates a board with a new, cryptographically random id (used as
+        both the board's primary key and its unguessable URL token) and
+        returns the id plus a share URL. No authentication required.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: >
+                    Optional board title. Trimmed server-side; falls back
+                    to "Untitled Board" when omitted or blank/whitespace-only.
+                  example: Sprint 12
+      responses:
+        '201':
+          description: Board created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateBoardResponse'
+
+  /boards/{board_id}:
+    parameters:
+      - $ref: '#/components/parameters/BoardId'
+    get:
+      operationId: getBoard
+      tags: [boards]
+      summary: Get board metadata and all of its cards
+      description: |
+        Returns the board plus every card belonging to it, sorted by
+        `position` ascending within each column. No authentication
+        required beyond knowing `board_id`.
+      responses:
+        '200':
+          description: Board with cards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardWithCards'
+        '404':
+          $ref: '#/components/responses/BoardNotFound'
+    patch:
+      operationId: updateBoard
+      tags: [boards]
+      summary: Update board title
+      description: No authentication required beyond knowing `board_id`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: >
+                    New title. Trimmed server-side; falls back to
+                    "Untitled Board" when blank/whitespace-only.
+                  example: Sprint 13
+      responses:
+        '200':
+          description: Updated board
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+        '404':
+          $ref: '#/components/responses/BoardNotFound'
+
+  /boards/{board_id}/cards:
+    parameters:
+      - $ref: '#/components/parameters/BoardId'
+    post:
+      operationId: createCard
+      tags: [cards]
+      summary: Create a new card on a board
+      description: No authentication required beyond knowing `board_id`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, status, position]
+              properties:
+                title:
+                  type: string
+                  example: Write tests
+                status:
+                  $ref: '#/components/schemas/CardStatus'
+                position:
+                  type: number
+                  format: double
+                  description: >
+                    Fractional rank determining order within the column
+                    (see spec §4.1 note on ordering).
+                  example: 1000
+      responses:
+        '201':
+          description: Card created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '404':
+          $ref: '#/components/responses/BoardNotFound'
+
+  /cards/{card_id}:
+    parameters:
+      - $ref: '#/components/parameters/CardId'
+    patch:
+      operationId: updateCard
+      tags: [cards]
+      summary: Update a card's title, status, and/or position
+      description: |
+        Partial update — every field is optional and independent; omitted
+        fields are left unchanged. No authentication required beyond
+        knowing `card_id`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  example: Final title
+                status:
+                  $ref: '#/components/schemas/CardStatus'
+                position:
+                  type: number
+                  format: double
+                  example: 1500
+      responses:
+        '200':
+          description: Updated card
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '404':
+          $ref: '#/components/responses/CardNotFound'
+    delete:
+      operationId: deleteCard
+      tags: [cards]
+      summary: Delete a card
+      description: No authentication required beyond knowing `card_id`.
+      responses:
+        '204':
+          description: Card deleted
+        '404':
+          $ref: '#/components/responses/CardNotFound'
+
+components:
+  parameters:
+    BoardId:
+      name: board_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The board's id (also its unguessable share-URL token).
+    CardId:
+      name: card_id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    CardStatus:
+      type: string
+      description: Fixed 4-stage Kanban pipeline (spec §3.2). Not user-configurable.
+      enum: [BACKLOG, IN_PROGRESS, REVIEW, DONE]
+
+    Board:
+      type: object
+      required: [id, title, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          description: 21-character NanoID (≥128 bits entropy, spec §5).
+          example: V1StGXR8_Z5jdHi6B-myT
+        title:
+          type: string
+          example: Sprint 12
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Card:
+      type: object
+      required: [id, board_id, title, status, position, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        board_id:
+          type: string
+        title:
+          type: string
+          example: Write tests
+        status:
+          $ref: '#/components/schemas/CardStatus'
+        position:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BoardWithCards:
+      allOf:
+        - $ref: '#/components/schemas/Board'
+        - type: object
+          required: [cards]
+          properties:
+            cards:
+              type: array
+              description: All cards on the board, sorted by `position` ascending.
+              items:
+                $ref: '#/components/schemas/Card'
+
+    CreateBoardResponse:
+      type: object
+      required: [id, url]
+      properties:
+        id:
+          type: string
+          example: V1StGXR8_Z5jdHi6B-myT
+        url:
+          type: string
+          description: Relative share URL for the new board.
+          example: /b/V1StGXR8_Z5jdHi6B-myT
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: Board not found
+
+  responses:
+    BoardNotFound:
+      description: Board not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Board not found
+    CardNotFound:
+      description: Card not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Card not found
