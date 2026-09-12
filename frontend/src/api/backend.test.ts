@@ -1,11 +1,9 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import * as backend from './backend';
 
-describe('backend (mock)', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
+// Exercises the real HTTP client in ./backend.ts against the fetch stub
+// installed in src/test/setup.ts (see src/test/mockApiServer.ts).
+describe('backend (HTTP client)', () => {
   describe('createBoard', () => {
     it('creates a board with a default title and a share URL', async () => {
       const { id, url } = await backend.createBoard();

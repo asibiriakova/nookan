@@ -1,12 +1,11 @@
 // ---------------------------------------------------------------------------
 // Centralized backend client.
 //
-// EVERY call the frontend makes to the backend goes through this module.
-// Right now it's implemented as an in-browser mock (localStorage-backed, with
-// simulated network latency) so the app is fully interactive without a real
-// server. The function signatures and returned shapes mirror the REST API
-// in _docs/specs.md §4.2 one-to-one, so swapping the mock body for real
-// `fetch()` calls later should not require touching any calling code:
+// EVERY call the frontend makes to the backend goes through this module. It
+// talks to the real FastAPI service (see backend/) over HTTP, at the URL in
+// VITE_API_BASE_URL (see .env.example) — defaulting to http://localhost:8000
+// for local dev. Request/response shapes mirror the REST API in
+// _docs/specs.md §4.2 / backend/openapi.yaml one-to-one:
 //
 //   POST   /api/v1/boards                  -> createBoard()
 //   GET    /api/v1/boards/{board_id}        -> getBoard()
@@ -14,47 +13,15 @@
 //   POST   /api/v1/boards/{board_id}/cards  -> createCard()
 //   PATCH  /api/v1/cards/{card_id}          -> updateCard()
 //   DELETE /api/v1/cards/{card_id}          -> deleteCard()
+//
+// Tests stub out `fetch` (see src/test/mockApiServer.ts) rather than hitting
+// a real server, so this module's request-building/parsing still gets
+// exercised end to end.
 // ---------------------------------------------------------------------------
 
-import { nanoid } from 'nanoid';
 import type { Board, BoardWithCards, Card, CardStatus } from './types';
 
-const DB_KEY = 'nookan_mock_db_v1';
-const MIN_LATENCY_MS = 150;
-const MAX_LATENCY_MS = 450;
-
-interface Db {
-  boards: Record<string, Board>;
-  cards: Record<string, Card>;
-}
-
-function emptyDb(): Db {
-  return { boards: {}, cards: {} };
-}
-
-function readDb(): Db {
-  try {
-    const raw = localStorage.getItem(DB_KEY);
-    if (!raw) return emptyDb();
-    const parsed = JSON.parse(raw) as Db;
-    return { boards: parsed.boards ?? {}, cards: parsed.cards ?? {} };
-  } catch {
-    return emptyDb();
-  }
-}
-
-function writeDb(db: Db): void {
-  localStorage.setItem(DB_KEY, JSON.stringify(db));
-}
-
-function delay<T>(value: T): Promise<T> {
-  const ms = MIN_LATENCY_MS + Math.random() * (MAX_LATENCY_MS - MIN_LATENCY_MS);
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
-}
-
-function now(): string {
-  return new Date().toISOString();
-}
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(/\/+$/, '');
 
 class NotFoundError extends Error {
   constructor(what: string) {
@@ -63,49 +30,65 @@ class NotFoundError extends Error {
   }
 }
 
+class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...init?.headers },
+  });
+}
+
+async function parseJson<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** Reads the `{ error }` body the API sends on failure, per openapi.yaml's Error schema. */
+async function apiError(res: Response): Promise<ApiError> {
+  const body = await parseJson<{ error?: string }>(res).catch(() => undefined);
+  return new ApiError(res.status, body?.error ?? `Request failed with status ${res.status}`);
+}
+
 // ---------------------------------------------------------------------------
 // Boards
 // ---------------------------------------------------------------------------
 
 /** POST /api/v1/boards */
 export async function createBoard(title?: string): Promise<{ id: string; url: string }> {
-  const db = readDb();
-  const id = nanoid(21); // 21-char NanoID ~= 128 bits of entropy, per spec §5.
-  const ts = now();
-  db.boards[id] = {
-    id,
-    title: title?.trim() || 'Untitled Board',
-    created_at: ts,
-    updated_at: ts,
-  };
-  writeDb(db);
-  return delay({ id, url: `/b/${id}` });
+  const res = await apiFetch('/api/v1/boards', {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw await apiError(res);
+  return parseJson(res);
 }
 
 /** GET /api/v1/boards/{board_id} */
 export async function getBoard(boardId: string): Promise<BoardWithCards> {
-  const db = readDb();
-  const board = db.boards[boardId];
-  if (!board) {
-    await delay(undefined);
-    throw new NotFoundError('Board');
-  }
-  const cards = Object.values(db.cards)
-    .filter((c) => c.board_id === boardId)
-    .sort((a, b) => a.position - b.position);
-  return delay({ ...board, cards });
+  const res = await apiFetch(`/api/v1/boards/${encodeURIComponent(boardId)}`);
+  if (res.status === 404) throw new NotFoundError('Board');
+  if (!res.ok) throw await apiError(res);
+  return parseJson(res);
 }
 
 /** PATCH /api/v1/boards/{board_id} */
 export async function updateBoard(boardId: string, patch: { title?: string }): Promise<Board> {
-  const db = readDb();
-  const board = db.boards[boardId];
-  if (!board) throw new NotFoundError('Board');
-  if (patch.title !== undefined) board.title = patch.title.trim() || 'Untitled Board';
-  board.updated_at = now();
-  db.boards[boardId] = board;
-  writeDb(db);
-  return delay(board);
+  const res = await apiFetch(`/api/v1/boards/${encodeURIComponent(boardId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+  if (res.status === 404) throw new NotFoundError('Board');
+  if (!res.ok) throw await apiError(res);
+  return parseJson(res);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,23 +100,13 @@ export async function createCard(
   boardId: string,
   data: { title: string; status: CardStatus; position: number },
 ): Promise<Card> {
-  const db = readDb();
-  if (!db.boards[boardId]) throw new NotFoundError('Board');
-  const id = nanoid();
-  const ts = now();
-  const card: Card = {
-    id,
-    board_id: boardId,
-    title: data.title,
-    status: data.status,
-    position: data.position,
-    created_at: ts,
-    updated_at: ts,
-  };
-  db.cards[id] = card;
-  db.boards[boardId].updated_at = ts;
-  writeDb(db);
-  return delay(card);
+  const res = await apiFetch(`/api/v1/boards/${encodeURIComponent(boardId)}/cards`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  if (res.status === 404) throw new NotFoundError('Board');
+  if (!res.ok) throw await apiError(res);
+  return parseJson(res);
 }
 
 /** PATCH /api/v1/cards/{card_id} */
@@ -141,30 +114,20 @@ export async function updateCard(
   cardId: string,
   patch: { title?: string; status?: CardStatus; position?: number },
 ): Promise<Card> {
-  const db = readDb();
-  const card = db.cards[cardId];
-  if (!card) throw new NotFoundError('Card');
-  if (patch.title !== undefined) card.title = patch.title;
-  if (patch.status !== undefined) card.status = patch.status;
-  if (patch.position !== undefined) card.position = patch.position;
-  card.updated_at = now();
-  db.cards[cardId] = card;
-  const board = db.boards[card.board_id];
-  if (board) board.updated_at = now();
-  writeDb(db);
-  return delay(card);
+  const res = await apiFetch(`/api/v1/cards/${encodeURIComponent(cardId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+  if (res.status === 404) throw new NotFoundError('Card');
+  if (!res.ok) throw await apiError(res);
+  return parseJson(res);
 }
 
 /** DELETE /api/v1/cards/{card_id} */
 export async function deleteCard(cardId: string): Promise<void> {
-  const db = readDb();
-  const card = db.cards[cardId];
-  if (!card) throw new NotFoundError('Card');
-  delete db.cards[cardId];
-  const board = db.boards[card.board_id];
-  if (board) board.updated_at = now();
-  writeDb(db);
-  return delay(undefined);
+  const res = await apiFetch(`/api/v1/cards/${encodeURIComponent(cardId)}`, { method: 'DELETE' });
+  if (res.status === 404) throw new NotFoundError('Card');
+  if (!res.ok) throw await apiError(res);
 }
 
-export { NotFoundError };
+export { ApiError, NotFoundError };

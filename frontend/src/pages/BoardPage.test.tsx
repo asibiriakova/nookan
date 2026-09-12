@@ -1,20 +1,16 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import * as backend from '../api/backend';
 import BoardPage from './BoardPage';
 
 // The drop-target math (resolveDrop) is unit-tested on its own in
 // src/lib/resolveDrop.test.ts; this file covers the page's rendering and
 // user-facing interactions (add/edit/move/delete) end to end against the
-// real mock backend.
+// real backend client, with `fetch` stubbed by src/test/mockApiServer.ts.
 
 describe('BoardPage', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
   function renderBoard(boardId: string) {
     return render(
       <MemoryRouter initialEntries={[`/b/${boardId}`]}>

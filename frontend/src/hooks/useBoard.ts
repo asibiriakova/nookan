@@ -64,17 +64,6 @@ export function useBoard(boardId: string) {
     return () => window.removeEventListener('focus', onFocus);
   }, [load]);
 
-  // The mock backend persists to localStorage, so other tabs editing the
-  // same board fire a native 'storage' event — piggyback on it for
-  // near-instant cross-tab sync instead of waiting for the next poll.
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === 'nookan_mock_db_v1') load({ silent: true });
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [load]);
-
   const withOptimism = useCallback(
     async <T,>(apply: () => void, revert: () => void, request: () => Promise<T>) => {
       suppressPollRef.current++;
